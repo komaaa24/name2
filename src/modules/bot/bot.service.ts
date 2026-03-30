@@ -602,10 +602,7 @@ export class BotService {
     // Generate creative image card with gender detection
     try {
       // Detect gender from record or name
-      let gender: 'boy' | 'girl' | undefined;
-      if (record?.gender === 'boy' || record?.gender === 'girl') {
-        gender = record.gender as 'boy' | 'girl';
-      }
+      const gender = this.inferCardGender(record?.name ?? name, meaning || '', record?.gender);
 
       const imageBuffer = await this.nameCardGenerator.generateNameCard(
         record?.name ?? name,
@@ -637,6 +634,102 @@ export class BotService {
         reply_markup: this.buildNameDetailKeyboard(record?.slug ?? name.toLowerCase()),
       });
     }
+  }
+
+  private inferCardGender(
+    name: string,
+    meaning: string,
+    explicitGender?: 'boy' | 'girl' | 'unisex',
+  ): 'boy' | 'girl' | undefined {
+    if (explicitGender === 'boy' || explicitGender === 'girl') {
+      return explicitGender;
+    }
+
+    const normalizedName = (name || '').trim().toLowerCase();
+    const normalizedMeaning = (meaning || '').trim().toLowerCase();
+    const combined = `${normalizedName} ${normalizedMeaning}`;
+
+    const girlPatterns = [
+      /\bqiz\b/,
+      /\bayol\b/,
+      /\bmalika\b/,
+      /\bkelin\b/,
+      /\bsuluv\b/,
+      /\bgo'zal\b/,
+      /\bgul\b/,
+      /\bpari\b/,
+      /\bniso\b/,
+      /\boyim\b/,
+    ];
+
+    const boyPatterns = [
+      /\bo'g'il\b/,
+      /\berkak\b/,
+      /\byigit\b/,
+      /\bshahzoda\b/,
+      /\bamir\b/,
+      /\bbek\b/,
+      /\bxon\b/,
+      /\bmirzo\b/,
+    ];
+
+    if (girlPatterns.some((pattern) => pattern.test(combined))) {
+      return 'girl';
+    }
+
+    if (boyPatterns.some((pattern) => pattern.test(combined))) {
+      return 'boy';
+    }
+
+    const commonGirlNames = [
+      'lola', 'laylo', 'zilola', 'nilufar', 'zuhra', 'muslima', 'shirin', 'oysha', 'fatima',
+      'zarina', 'madina', 'dilnoza', 'dilfuza', 'gulbahor', 'mohira', 'mahliyo', 'shahnoza',
+    ];
+    const commonBoyNames = [
+      'abdulloh', 'amir', 'alisher', 'akmal', 'bekzod', 'davron', 'elyor', 'farrux', 'husan',
+      'islom', 'jahongir', 'kamol', 'kamoliddin', 'mansur', 'nodir', 'odil', 'ravshan', 'sardor',
+      'timur', 'umid', 'zafar', 'kamron', 'samir', 'rustam', 'komron', 'shukrullo', 'muslim',
+      'azamat', 'shohruh', 'abror', 'behruz', 'bilol', 'diyor', 'erkin', 'habib', 'jamshid',
+      'karim', 'laziz', 'mironshoh', 'navruz', 'oybek', 'qahramon', 'rahim', 'sherzod', 'tursun',
+      'umar', 'yusuf', 'ziyod', 'zohid', 'muhsin', 'asadbek', 'javlon', 'kamronbek', 'shahboz',
+      'tolib', 'yahyo', 'zikrulloh', 'hikmatulloh', 'muhammad', 'muhammadali', 'abdulaziz',
+      'abdulloh', 'ibrat', 'ibragim', 'ibragimjon', 'temur', 'temurbek', 'bobur', 'boburbek',
+      'ulugbek', 'mirjalol', 'abdulhamid', 'azizbek', 'shoxrux', 'sardorbek',
+    ];
+
+    if (commonGirlNames.includes(normalizedName)) {
+      return 'girl';
+    }
+
+    if (commonBoyNames.includes(normalizedName)) {
+      return 'boy';
+    }
+
+    if (
+      normalizedName.endsWith('a') ||
+      normalizedName.endsWith('ya') ||
+      normalizedName.endsWith('niso') ||
+      normalizedName.endsWith('oy') ||
+      normalizedName.startsWith('gul')
+    ) {
+      return 'girl';
+    }
+
+    if (
+      normalizedName.endsWith('bek') ||
+      normalizedName.endsWith('boy') ||
+      normalizedName.endsWith('iddin') ||
+      normalizedName.endsWith('ulloh') ||
+      normalizedName.endsWith('jon') ||
+      normalizedName.endsWith('mir') ||
+      normalizedName.endsWith('shoh') ||
+      normalizedName.endsWith('zod') ||
+      normalizedName.startsWith('abdul')
+    ) {
+      return 'boy';
+    }
+
+    return undefined;
   }
 
   private async processNameMatch(ctx: BotContext, rawName: string): Promise<void> {
