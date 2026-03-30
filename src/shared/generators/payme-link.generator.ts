@@ -7,6 +7,7 @@ export type PaymeLinkGeneratorParams = {
   planId: string;
   userId: string;
   amount: number;
+  returnUrl?: string;
 };
 
 const PAYME_CHECKOUT_URL = 'https://checkout.paycom.uz';
@@ -17,7 +18,11 @@ export function buildPaymeProviderUrl(
   const merchantId = config.PAYME_MERCHANT_ID;
   const amountAsNumber = parseFloat(params.amount.toString());
   const amountInTiyns = Math.round(amountAsNumber * 100);
-  const returnUrl = 'https://t.me/ismlarimizmanolari_bot';
+  const returnUrl =
+    params.returnUrl ||
+    process.env.PAYME_RETURN_URL ||
+    config.PAYMENT_LINK_BASE_URL ||
+    '';
 
   logger.info('🔗 Payme link generation', {
     originalAmount: params.amount,
@@ -40,7 +45,17 @@ export function buildPaymeProviderUrl(
   console.log('Debug - amountInTiyns:', amountInTiyns);
   console.log('Debug - returnUrl:', returnUrl);
 
-  const paramsInString = `m=${merchantId};ac.plan_id=${params.planId};ac.user_id=${params.userId};ac.selected_service=${params.planId};a=${amountInTiyns};c=${encodeURIComponent(returnUrl)}`;
+  const parts = [
+    `m=${merchantId}`,
+    `ac.plan_id=${params.planId}`,
+    `ac.user_id=${params.userId}`,
+    `ac.selected_service=${params.planId}`,
+    `a=${amountInTiyns}`,
+  ];
+  if (returnUrl) {
+    parts.push(`c=${encodeURIComponent(returnUrl)}`);
+  }
+  const paramsInString = parts.join(';');
   console.log('Debug - paramsInString length:', paramsInString.length);
   console.log('Debug - paramsInString content:', paramsInString);
 

@@ -2,6 +2,7 @@ import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import { PaymeError } from '../../constants/payme-error';
+import logger from '../../../../../shared/utils/logger';
 
 // ! Payme dan kelayotgan so'rovlarni tekshirib va server xavfsizligini taminlash uchun
 @Injectable()
@@ -34,11 +35,48 @@ export class PaymeBasicAuthGuard implements CanActivate {
 
       const [username, password] = decoded.split(':');
 
+      // Payme sandbox ba'zan username sifatida Merchant ID ni yuboradi,
+      // ba'zan konfiguratsiyadagi login (PAYME_LOGIN). Ikkalasini ham qabul qilamiz.
+      const sanitize = (v?: string | null) =>
+        (v ?? '').trim().replace(/^"+|"+$/g, '').replace(/^'+|'+$/g, '');
+
+      const configuredLogin = sanitize(
+        this.configService.get<string>('PAYME_LOGIN'),
+      );
+      const merchantId = sanitize(
+        this.configService.get<string>('PAYME_MERCHANT_ID'),
+      );
       const isValidUsername =
-        this.configService.get<string>('PAYME_LOGIN') === username;
-      // ! production mode da passwordni o'zgartishni unutmang
+        (!!configuredLogin && configuredLogin === username) ||
+        (!!merchantId && merchantId === username);
+      // Sandboxdan kelayotgan Basic auth ba'zan test paroli bilan bo'ladi,
+      // shuning uchun ikkala env qiymatini ham qabul qilamiz.
+      const prodPassword = sanitize(
+        this.configService.get<string>('PAYME_PASSWORD'),
+      );
+      const testPassword = sanitize(
+        this.configService.get<string>('PAYME_PASSWORD_TEST'),
+      );
+
+      const debugPayload = {
+        username,
+        password,
+        configuredLogin,
+        merchantId,
+        prodPassword,
+        testPassword,
+      };
+      logger.info('PAYME basic auth check', debugPayload);
+      console.log('PAYME basic auth check', debugPayload);
+
       const isValidPassword =
-        this.configService.get<string>('PAYME_PASSWORD') === password;
+        (!!prodPassword && prodPassword === password) ||
+        (!!testPassword && testPassword === password);
+
+      console.log('PAYME auth check result', {
+        isValidUsername,
+        isValidPassword,
+      });
 
       if (!isValidUsername || !isValidPassword) {
         response.status(200).send({

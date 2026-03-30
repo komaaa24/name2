@@ -1,15 +1,69 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { createCanvas, registerFont, CanvasRenderingContext2D } from 'canvas';
 import * as path from 'path';
+
+type CanvasContext = any;
+
+interface CanvasRuntime {
+    createCanvas: (width: number, height: number) => {
+        getContext: (type: '2d') => CanvasContext;
+        toBuffer: (mimeType?: string) => Buffer;
+    };
+    registerFont: (fontPath: string, options: { family: string; weight?: string }) => void;
+}
 
 @Injectable()
 export class NameCardGeneratorService {
     private readonly logger = new Logger(NameCardGeneratorService.name);
     private readonly WIDTH = 700;
     private readonly HEIGHT = 700;
+    private readonly canvasRuntime: CanvasRuntime;
 
     constructor() {
+        this.canvasRuntime = this.resolveCanvasRuntime();
         this.registerFonts();
+    }
+
+    private resolveCanvasRuntime(): CanvasRuntime {
+        const canvasModule = require('canvas');
+        if (this.isRealCanvasRuntime(canvasModule)) {
+            return canvasModule;
+        }
+
+        const packageDir = path.dirname(require.resolve('canvas/package.json'));
+
+        try {
+            const Canvas = require(path.join(packageDir, 'lib', 'canvas'));
+            const runtime: CanvasRuntime = {
+                createCanvas: (width: number, height: number) => new Canvas(width, height),
+                registerFont: Canvas._registerFont.bind(Canvas),
+            };
+
+            if (this.isRealCanvasRuntime(runtime)) {
+                this.logger.warn('Stub canvas module detected, switched to native canvas bindings.');
+                return runtime;
+            }
+        } catch (error) {
+            this.logger.error('Failed to load native canvas bindings.', error as any);
+        }
+
+        throw new Error('Canvas runtime unavailable. Run `npm rebuild canvas --build-from-source` on this server.');
+    }
+
+    private isRealCanvasRuntime(runtime: Partial<CanvasRuntime> | undefined): runtime is CanvasRuntime {
+        try {
+            const canvas = runtime?.createCanvas?.(4, 4);
+            const ctx = canvas?.getContext?.('2d');
+
+            return Boolean(
+                canvas &&
+                typeof canvas.toBuffer === 'function' &&
+                ctx &&
+                typeof ctx.createLinearGradient === 'function' &&
+                typeof runtime?.registerFont === 'function',
+            );
+        } catch {
+            return false;
+        }
     }
 
     private registerFonts(): void {
@@ -20,8 +74,8 @@ export class NameCardGeneratorService {
             const fs = require('fs');
             if (fs.existsSync(boldFont) && fs.existsSync(regularFont)) {
                 try {
-                    registerFont(boldFont, { family: 'Roboto', weight: 'bold' });
-                    registerFont(regularFont, { family: 'Roboto', weight: 'normal' });
+                    this.canvasRuntime.registerFont(boldFont, { family: 'Roboto', weight: 'bold' });
+                    this.canvasRuntime.registerFont(regularFont, { family: 'Roboto', weight: 'normal' });
                     this.logger.log('Fonts registered');
                 } catch (err) {
                     this.logger.warn('Using system fonts');
@@ -33,7 +87,7 @@ export class NameCardGeneratorService {
     }
 
     async generateNameCard(name: string, meaning: string, gender?: 'boy' | 'girl'): Promise<Buffer> {
-        const canvas = createCanvas(this.WIDTH, this.HEIGHT);
+        const canvas = this.canvasRuntime.createCanvas(this.WIDTH, this.HEIGHT);
         const ctx = canvas.getContext('2d');
 
         // Gradient background - binafsha
@@ -51,7 +105,7 @@ export class NameCardGeneratorService {
         return canvas.toBuffer('image/png');
     }
 
-    private drawGradientBackground(ctx: CanvasRenderingContext2D): void {
+    private drawGradientBackground(ctx: CanvasContext): void {
         // Yuqorida kumush gradient - skromniy va elegant
         const gradientHeight = this.HEIGHT * 0.50; // 50% yuqori qism
         const gradient = ctx.createLinearGradient(0, 0, 0, gradientHeight);
@@ -79,7 +133,7 @@ export class NameCardGeneratorService {
         ctx.globalCompositeOperation = 'source-over';
     }
 
-    private drawNameBox(ctx: CanvasRenderingContext2D, name: string): void {
+    private drawNameBox(ctx: CanvasContext, name: string): void {
         const centerX = this.WIDTH / 2;
         const centerY = 160; // Binafsha qismda
 
@@ -114,7 +168,7 @@ export class NameCardGeneratorService {
         ctx.fillText(name, centerX, centerY);
     }
 
-    private drawBotUsername(ctx: CanvasRenderingContext2D): void {
+    private drawBotUsername(ctx: CanvasContext): void {
         const centerX = this.WIDTH / 2;
         const y = this.HEIGHT - 50;
 
@@ -126,7 +180,7 @@ export class NameCardGeneratorService {
         ctx.fillText('@ismlarimizmanolari_bot', centerX, y);
     }
 
-    private drawMeaningBox(ctx: CanvasRenderingContext2D, meaning: string): void {
+    private drawMeaningBox(ctx: CanvasContext, meaning: string): void {
         const centerX = this.WIDTH / 2;
         const startY = 480; // Oq qismda (50% dan keyin)
 
@@ -154,7 +208,7 @@ export class NameCardGeneratorService {
 
 
 
-    private wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+    private wrapText(ctx: CanvasContext, text: string, maxWidth: number): string[] {
         const words = text.split(' ');
         const lines: string[] = [];
         let currentLine = '';
@@ -174,7 +228,7 @@ export class NameCardGeneratorService {
         return lines;
     }
 
-    private drawIslamicPattern(ctx: CanvasRenderingContext2D, height: number): void {
+    private drawIslamicPattern(ctx: CanvasContext, height: number): void {
         ctx.globalAlpha = 0.15;
 
         // Markazda bitta katta islomiy naqsh
@@ -260,7 +314,7 @@ export class NameCardGeneratorService {
         ctx.restore();
     }
 
-    private roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
+    private roundRect(ctx: CanvasContext, x: number, y: number, width: number, height: number, radius: number): void {
         ctx.beginPath();
         ctx.moveTo(x + radius, y);
         ctx.lineTo(x + width - radius, y);
