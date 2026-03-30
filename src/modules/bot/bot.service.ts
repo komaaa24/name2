@@ -12,6 +12,7 @@ import { AdminService } from './services/admin.service';
 import { UserEntity } from '../../shared/database/entities/user.entity';
 import { PlanEntity } from '../../shared/database/entities/plan.entity';
 import { UserPaymentEntity } from '../../shared/database/entities/user-payment.entity';
+import { UserFavoriteNameEntity } from '../../shared/database/entities/user-favorite-name.entity';
 import { TargetGender } from '../../shared/database/entities/user-persona-profile.entity';
 import { ActivityType, PaymentStatus } from '../../shared/database/entities';
 import { generatePaymeLink } from '../../shared/generators/payme-link.generator';
@@ -48,6 +49,8 @@ export class BotService {
     private readonly planRepository: Repository<PlanEntity>,
     @InjectRepository(UserPaymentEntity)
     private readonly userPaymentRepository: Repository<UserPaymentEntity>,
+    @InjectRepository(UserFavoriteNameEntity)
+    private readonly userFavoriteNameRepository: Repository<UserFavoriteNameEntity>,
     private readonly nameMeaningService: NameMeaningService,
     @Inject(forwardRef(() => NameInsightsService))
     private readonly insightsService: NameInsightsService,
@@ -602,7 +605,7 @@ export class BotService {
     // Generate creative image card with gender detection
     try {
       // Detect gender from record or name
-      const gender = this.inferCardGender(record?.name ?? name, meaning || '', record?.gender);
+      const gender = await this.inferCardGender(record?.name ?? name, meaning || '', record?.gender);
 
       const imageBuffer = await this.nameCardGenerator.generateNameCard(
         record?.name ?? name,
@@ -636,83 +639,84 @@ export class BotService {
     }
   }
 
-  private inferCardGender(
+  private async inferCardGender(
     name: string,
     meaning: string,
     explicitGender?: 'boy' | 'girl' | 'unisex',
-  ): 'boy' | 'girl' | undefined {
+  ): Promise<'boy' | 'girl'> {
     if (explicitGender === 'boy' || explicitGender === 'girl') {
       return explicitGender;
     }
 
-    const normalizedName = (name || '').trim().toLowerCase();
-    const normalizedMeaning = (meaning || '').trim().toLowerCase();
+    const normalizedName = this.normalizeGenderValue(name);
+    const normalizedMeaning = this.normalizeGenderValue(meaning);
     const combined = `${normalizedName} ${normalizedMeaning}`;
+
+    const dbFavorite = await this.userFavoriteNameRepository
+      .createQueryBuilder('favorite')
+      .where('LOWER(favorite.slug) = :normalizedName', { normalizedName })
+      .orWhere('LOWER(favorite.name) = :normalizedName', { normalizedName })
+      .orderBy('favorite.updatedAt', 'DESC')
+      .getOne();
+
+    if (dbFavorite?.gender === 'boy' || dbFavorite?.gender === 'girl') {
+      return dbFavorite.gender;
+    }
 
     const girlPatterns = [
       /\bqiz\b/,
       /\bayol\b/,
       /\bmalika\b/,
+      /\bqirolicha\b/,
       /\bkelin\b/,
       /\bsuluv\b/,
-      /\bgo'zal\b/,
-      /\bgul\b/,
+      /\bgozal\b/,
+      /\byoqimli\b/,
+      /\bsuyukli\b/,
+      /\bnazokat\b/,
+      /\blatofat\b/,
       /\bpari\b/,
-      /\bniso\b/,
       /\boyim\b/,
+      /\bxonim\b/,
     ];
 
     const boyPatterns = [
-      /\bo'g'il\b/,
+      /\bogil\b/,
       /\berkak\b/,
       /\byigit\b/,
-      /\bshahzoda\b/,
-      /\bamir\b/,
-      /\bbek\b/,
-      /\bxon\b/,
+      /\bhokim\b/,
+      /\bhukmron\b/,
+      /\byolboshchi\b/,
+      /\bbola\b/,
+      /\bfarzand\b/,
+      /\bkomondon\b/,
+      /\bjasorat\b/,
       /\bmirzo\b/,
     ];
 
-    if (girlPatterns.some((pattern) => pattern.test(combined))) {
-      return 'girl';
-    }
-
-    if (boyPatterns.some((pattern) => pattern.test(combined))) {
-      return 'boy';
-    }
-
-    const commonGirlNames = [
-      'lola', 'laylo', 'zilola', 'nilufar', 'zuhra', 'muslima', 'shirin', 'oysha', 'fatima',
-      'zarina', 'madina', 'dilnoza', 'dilfuza', 'gulbahor', 'mohira', 'mahliyo', 'shahnoza',
-    ];
-    const commonBoyNames = [
-      'abdulloh', 'amir', 'alisher', 'akmal', 'bekzod', 'davron', 'elyor', 'farrux', 'husan',
-      'islom', 'jahongir', 'kamol', 'kamoliddin', 'mansur', 'nodir', 'odil', 'ravshan', 'sardor',
-      'timur', 'umid', 'zafar', 'kamron', 'samir', 'rustam', 'komron', 'shukrullo', 'muslim',
-      'azamat', 'shohruh', 'abror', 'behruz', 'bilol', 'diyor', 'erkin', 'habib', 'jamshid',
-      'karim', 'laziz', 'mironshoh', 'navruz', 'oybek', 'qahramon', 'rahim', 'sherzod', 'tursun',
-      'umar', 'yusuf', 'ziyod', 'zohid', 'muhsin', 'asadbek', 'javlon', 'kamronbek', 'shahboz',
-      'tolib', 'yahyo', 'zikrulloh', 'hikmatulloh', 'muhammad', 'muhammadali', 'abdulaziz',
-      'abdulloh', 'ibrat', 'ibragim', 'ibragimjon', 'temur', 'temurbek', 'bobur', 'boburbek',
-      'ulugbek', 'mirjalol', 'abdulhamid', 'azizbek', 'shoxrux', 'sardorbek',
-    ];
-
-    if (commonGirlNames.includes(normalizedName)) {
-      return 'girl';
-    }
-
-    if (commonBoyNames.includes(normalizedName)) {
-      return 'boy';
-    }
+    let girlScore = girlPatterns.filter((pattern) => pattern.test(combined)).length * 3;
+    let boyScore = boyPatterns.filter((pattern) => pattern.test(combined)).length * 3;
 
     if (
-      normalizedName.endsWith('a') ||
-      normalizedName.endsWith('ya') ||
       normalizedName.endsWith('niso') ||
+      normalizedName.endsWith('nisa') ||
       normalizedName.endsWith('oy') ||
-      normalizedName.startsWith('gul')
+      normalizedName.endsWith('oyim') ||
+      normalizedName.endsWith('gul') ||
+      normalizedName.endsWith('bonu') ||
+      normalizedName.endsWith('bibi') ||
+      normalizedName.endsWith('pari') ||
+      normalizedName.endsWith('noza') ||
+      normalizedName.endsWith('shoda') ||
+      normalizedName.endsWith('lola') ||
+      normalizedName.endsWith('begim') ||
+      normalizedName.endsWith('xonim') ||
+      normalizedName.startsWith('gul') ||
+      normalizedName.startsWith('oy') ||
+      normalizedName.startsWith('moh') ||
+      normalizedName.startsWith('mah')
     ) {
-      return 'girl';
+      girlScore += 2;
     }
 
     if (
@@ -720,16 +724,39 @@ export class BotService {
       normalizedName.endsWith('boy') ||
       normalizedName.endsWith('iddin') ||
       normalizedName.endsWith('ulloh') ||
+      normalizedName.endsWith('ullah') ||
       normalizedName.endsWith('jon') ||
       normalizedName.endsWith('mir') ||
       normalizedName.endsWith('shoh') ||
       normalizedName.endsWith('zod') ||
       normalizedName.startsWith('abdul')
     ) {
-      return 'boy';
+      boyScore += 2;
     }
 
-    return undefined;
+    if (normalizedName.endsWith('a') || normalizedName.endsWith('ya')) {
+      girlScore += 1;
+    } else {
+      boyScore += 1;
+    }
+
+    if (girlScore > boyScore) {
+      return 'girl';
+    }
+
+    return 'boy';
+  }
+
+  private normalizeGenderValue(value: string): string {
+    return (value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[ʻ’‘`]/g, "'")
+      .replace(/g'/g, 'g')
+      .replace(/o'/g, 'o')
+      .replace(/[^a-zа-яёқғҳў'\s-]/giu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   private async processNameMatch(ctx: BotContext, rawName: string): Promise<void> {

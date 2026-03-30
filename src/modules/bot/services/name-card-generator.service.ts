@@ -141,11 +141,7 @@ export class NameCardGeneratorService {
       return this.generateGirlNameCard(safeName, safeMeaning);
     }
 
-    if (gender === 'boy') {
-      return this.generateBoyNameCard(safeName, safeMeaning);
-    }
-
-    return this.generateClassicNameCard(safeName, safeMeaning);
+    return this.generateBoyNameCard(safeName, safeMeaning);
   }
 
   private async generateBoyNameCard(name: string, meaning: string): Promise<Buffer> {
