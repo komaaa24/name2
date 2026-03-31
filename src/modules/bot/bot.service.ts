@@ -22,8 +22,15 @@ import { NameCardGeneratorService } from './services/name-card-generator.service
 import { InputFile } from 'grammy';
 import { NameMatchService } from './services/name-match.service';
 
-const NAME_MATCH_BUTTON_TEXT = '💞 Ismingiz sizga mos insonni ochib beradi';
-const PAIR_MATCH_BUTTON_TEXT = '💘 Ikki ism mosligi';
+const INLINE_NAME_MEANING_BUTTON_TEXT = "🔎 Ismingiz ma'nosi";
+const INLINE_PERSONALIZATION_BUTTON_TEXT = '🎯 Shaxsiy tavsiya';
+const INLINE_NAME_MATCH_BUTTON_TEXT = '💞 Sizga mos juftlik';
+const INLINE_PAIR_MATCH_BUTTON_TEXT = '💘 Ikki ism mosligi';
+
+const REPLY_NAME_MEANING_BUTTON_TEXT = "🔎 Ism ma'nosini bilish";
+const REPLY_NAME_MATCH_BUTTON_TEXT = '💖 Menga mos inson kim?';
+const REPLY_PERSONALIZATION_BUTTON_TEXT = '🎯 Shaxsiy tavsiya olish';
+const REPLY_PAIR_MATCH_BUTTON_TEXT = '💞 Ikki ism mosligini tekshirish';
 
 type FlowName = 'personalization' | 'quiz' | 'compatibility' | 'compatibility_pair';
 
@@ -115,30 +122,8 @@ export class BotService {
       hasAccess = this.userHasActiveAccess(user);
     }
 
-    const firstName = ctx.from?.first_name || 'do\'st';
+    const welcomeMessage = this.buildWelcomeMessage(this.getGreetingName(ctx), hasAccess);
 
-    // 🎨 Beautiful welcome message
-    const welcomeMessage =
-      `╔══════════════════════╗\n` +
-      `   👑 ISMLAR MANOSI    \n` +
-      `╚══════════════════════╝\n\n` +
-      `Assalomu alaykum, <b>${firstName}</b>! 👋\n\n` +
-      `✍️ <b>Ma'nosini bilmoqchi bo'lgan ismni kiriting</b>\n\n` +
-      `📖 <b>Misol:</b> <code>Muhammad</code>\n` +
-      `<b>Muhammad </b> (Arabcha) - Maqtovga sazovor. ` +
-      `(Arabcha) - Maqtovga, olqishlarga sazovor. Payg‘ambarimiz Muhammad sollallohu alayhi vasallamning (Muhammad ibn Abdulloh, 570 yoki 571 Makka - 632, Madina) muborak ismlari..\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n\n` +
-      `🌟 <b>Botimiz imkoniyatlari:</b>\n\n` +
-      `🔍 <b>Ism Ma'nosi</b> - Istalgan ismning ma'nosi\n` +
-      `🎯 <b>Shaxsiy Tavsiya</b> - Farzandingizga ism qo'yishga ikkilanyapsizmi?\n` +
-      `💞 <b>Mos Inson</b> - Ismingizga mos insonni topadi\n` +
-      `🤝 <b>Ikki ism mosligi</b> - Ikki ism orasidagi moslikni tekshiradi\n\n` +
-      (hasAccess
-        ? `✅ <b>Status:</b> VIP foydalanuvchi\n♾️ Barcha imkoniyatlar ochiq!\n\n`
-        : `💳 Bir martalik to'lov - 9 999 so'm\n🌟 Bir marta to'lov qiling va 1 yillik obunaga ega bo'ling.\n\n`) +
-      `📱 Pastdagi tugmalardan birini bosing yoki ismni yozing! `;
-
-    // 🎹 Professional Reply Keyboard - use common method
     await ctx.reply(welcomeMessage, {
       parse_mode: 'HTML',
       reply_markup: this.getMainKeyboard(hasAccess),
@@ -416,13 +401,13 @@ export class BotService {
 
     // Handle reply keyboard button presses
     switch (text) {
-      case '🔍 Ism Ma\'nosi':
+      case REPLY_NAME_MEANING_BUTTON_TEXT:
         if (ctx.from?.id) {
           await this.activityTracker.trackActivity(ctx.from.id, ActivityType.NAME_MEANING_CLICK);
         }
         await this.promptForName(ctx);
         return;
-      case '🎯 Shaxsiy Tavsiya':
+      case REPLY_PERSONALIZATION_BUTTON_TEXT:
         if (ctx.from?.id) {
           await this.activityTracker.trackActivity(ctx.from.id, ActivityType.PERSONAL_TAVSIYA_CLICK);
         }
@@ -449,10 +434,10 @@ export class BotService {
       case '💳 Premium Obuna':
         await this.showOnetimePayment(ctx);
         return;
-      case NAME_MATCH_BUTTON_TEXT:
+      case REPLY_NAME_MATCH_BUTTON_TEXT:
         await this.promptForNameMatch(ctx);
         return;
-      case PAIR_MATCH_BUTTON_TEXT:
+      case REPLY_PAIR_MATCH_BUTTON_TEXT:
         await this.promptForPairNameMatch(ctx);
         return;
       case '📜 Oferta':
@@ -499,20 +484,39 @@ export class BotService {
     }
   }
 
+  private getGreetingName(ctx: BotContext): string {
+    const firstName = ctx.from?.first_name?.trim();
+    const lastName = ctx.from?.last_name?.trim();
+    const fullName = [firstName, lastName].filter(Boolean).join(' ');
+
+    return fullName || firstName || "do'st";
+  }
+
+  private buildWelcomeMessage(greetingName: string, hasAccess: boolean): string {
+    return (
+      `┏━━━━━━━━━━━━━━━━━━━━┓\n` +
+      `  👑 <b>ISMLAR MANOSI</b>\n` +
+      `┗━━━━━━━━━━━━━━━━━━━━┛\n\n` +
+      `Assalomu alaykum, <b>${greetingName}</b>! 👋\n\n` +
+      `🔎 <b>Ism ma'nosi</b>\n` +
+      `💖 <b>Mos inson</b>\n` +
+      `🎯 <b>Shaxsiy tavsiya</b>\n` +
+      `💘 <b>Ikki ism mosligi</b>\n\n` +
+      `✍️ <b>Ma'nosini bilmoqchi bo'lgan ismni kiriting</b>\n\n` +
+      `📖 <b>Misol:</b> <code>Muhammad</code>\n` +
+      `Muhammad (Arabcha) - maqtovga sazovor, sharafli, ulug' ism.`
+    );
+  }
+
   private buildMainMenuKeyboard(hasAccess: boolean): InlineKeyboard {
     const keyboard = new InlineKeyboard()
-      .text("🌟 Ism ma'nosi", 'name_meaning')
-      .text('🎯 Shaxsiy tavsiya', 'menu:personal')
+      .text(INLINE_NAME_MEANING_BUTTON_TEXT, 'name_meaning')
       .row()
-      .text(NAME_MATCH_BUTTON_TEXT, 'match:start')
+      .text(INLINE_NAME_MATCH_BUTTON_TEXT, 'match:start')
       .row()
-      .text(PAIR_MATCH_BUTTON_TEXT, 'match:pair_start')
+      .text(INLINE_PERSONALIZATION_BUTTON_TEXT, 'menu:personal')
       .row()
-      .text('📈 Trendlar', 'menu:trends')
-      .row()
-      .url('📜 Oferta', 'https://telegra.ph/Ismlar-manosi-11-24')
-      .row()
-      .switchInline('🔍 Inline qidiruv', '');
+      .text(INLINE_PAIR_MATCH_BUTTON_TEXT, 'match:pair_start');
 
     if (!hasAccess) {
       keyboard.row().text("💳 Bir martalik to'lov", 'onetime_payment');
@@ -531,15 +535,7 @@ export class BotService {
     }
 
     const keyboard = this.buildMainMenuKeyboard(hasAccess);
-    const greeting = ctx.from?.first_name ?? 'do\'st';
-    let message = `Assalomu alaykum, ${greeting}! 👋\n\n`;
-    message += '🌟 Ismlar manosi botiga xush kelibsiz!\n\n';
-    message += 'Bu yerda siz ismlarning ma\'nosi, trendlari, shaxsiy tavsiyalar va mos inson topish funksiyasini ishlatasiz.\n\n';
-    const displayedAmount = '9 999 so\'m';
-    message += hasAccess
-      ? '✅ Premium foydalanuvchisiz — barcha bo\'limlar ochiq.\n\n'
-      : `💳 Bir martalik to'lov qiling va 1 yillik premiumga ega bo'ling (${displayedAmount}).\n\n`;
-    message += "Quyidagi bo'limlardan birini tanlang yoki ismni yozing:";
+    const message = this.buildWelcomeMessage(this.getGreetingName(ctx), hasAccess);
 
     if (initial) {
       const sent = await ctx.reply(message, { reply_markup: keyboard, parse_mode: 'HTML' });
@@ -558,7 +554,9 @@ export class BotService {
   private async promptForName(ctx: BotContext): Promise<void> {
     const keyboard = new InlineKeyboard().text('🏠 Menyu', 'main');
     await ctx.reply(
-      '🌟 Ism ma\'nosi\n\nIltimos, qidirayotgan ismingizni yozing.\n\n💡 Masalan: Kamoliddin, Oisha, Muhammad.',
+      `🔎 <b>Ism ma'nosini bilish</b>\n\n` +
+      `Qaysi ism ma'nosini bilmoqchisiz, shu ismni yuboring.\n\n` +
+      `💡 Masalan: <code>Kamoliddin</code>, <code>Oisha</code>, <code>Muhammad</code>.`,
       { reply_markup: keyboard, parse_mode: 'HTML' },
     );
   }
@@ -571,16 +569,16 @@ export class BotService {
     };
 
     const keyboard = new InlineKeyboard()
-      .text("🌟 Ism ma'nosi", 'name_meaning')
+      .text(INLINE_NAME_MEANING_BUTTON_TEXT, 'name_meaning')
       .row()
       .text('🏠 Menyu', 'main');
 
     const message = seededName
-      ? `💞 <b>Ismingiz sizga mos insonni ochib beradi</b>\n\n` +
+      ? `💖 <b>Sizga mos juftlik</b>\n\n` +
         `Tanlangan ism: <b>${seededName}</b>\n\n` +
-        `Mos insonni topish uchun tugmani bosing.\n`
-      : `💞 <b>Ismingiz sizga mos insonni ochib beradi</b>\n\n` +
-        `Ismingizni yuboring, bot sizga eng mos ismni topib beradi.\n\n` +
+        `Endi mos insonni aniqlash uchun davom eting.\n`
+      : `💖 <b>Sizga mos juftlik</b>\n\n` +
+        `Ismingizni yuboring, bot sizga eng mos insonni topib beradi.\n\n` +
         `✨ Masalan: <code>Kamol</code>`;
 
     if (ctx.callbackQuery) {
@@ -602,7 +600,7 @@ export class BotService {
     };
 
     const keyboard = new InlineKeyboard()
-      .text(NAME_MATCH_BUTTON_TEXT, 'match:start')
+      .text(INLINE_NAME_MATCH_BUTTON_TEXT, 'match:start')
       .row()
       .text('🏠 Menyu', 'main');
 
@@ -820,11 +818,11 @@ export class BotService {
     try {
       const match = await this.nameMatchService.getMatch(name);
       const keyboard = new InlineKeyboard()
-        .text(NAME_MATCH_BUTTON_TEXT, `match:lookup:${name.toLowerCase()}`)
+        .text(INLINE_NAME_MATCH_BUTTON_TEXT, `match:lookup:${name.toLowerCase()}`)
         .row()
-        .text(PAIR_MATCH_BUTTON_TEXT, `match:pair_lookup:${name.toLowerCase()}`)
+        .text(INLINE_PAIR_MATCH_BUTTON_TEXT, `match:pair_lookup:${name.toLowerCase()}`)
         .row()
-        .text("🌟 Ism ma'nosi", 'name_meaning')
+        .text(INLINE_NAME_MEANING_BUTTON_TEXT, 'name_meaning')
         .text('🏠 Menyu', 'main');
 
       const message =
@@ -862,7 +860,7 @@ export class BotService {
         .row()
         .text(`💞 ${match.firstName} bilan mos inson`, `match:lookup:${match.firstName.toLowerCase()}`)
         .row()
-        .text("🌟 Ism ma'nosi", 'name_meaning')
+        .text(INLINE_NAME_MEANING_BUTTON_TEXT, 'name_meaning')
         .text('🏠 Menyu', 'main');
 
       const message =
@@ -890,20 +888,21 @@ export class BotService {
 
   private buildNameDetailKeyboard(slug: string): InlineKeyboard {
     return new InlineKeyboard()
-      .text(NAME_MATCH_BUTTON_TEXT, `match:lookup:${slug}`)
+      .text(INLINE_NAME_MATCH_BUTTON_TEXT, `match:lookup:${slug}`)
       .row()
-      .text(PAIR_MATCH_BUTTON_TEXT, `match:pair_lookup:${slug}`)
+      .text(INLINE_PAIR_MATCH_BUTTON_TEXT, `match:pair_lookup:${slug}`)
       .row()
       .text('🏠 Menyu', 'main')
-      .text('🎯 Shaxsiy tavsiya', 'menu:personal');
+      .text(INLINE_PERSONALIZATION_BUTTON_TEXT, 'menu:personal');
   }
 
   // Reply Keyboard generator - doim pastda turadi
   private getMainKeyboard(hasAccess: boolean = false): Keyboard {
     const keyboard = new Keyboard();
-    keyboard.text('🔍 Ism Ma\'nosi').text('🎯 Shaxsiy Tavsiya').row();
-    keyboard.text(NAME_MATCH_BUTTON_TEXT).row();
-    keyboard.text(PAIR_MATCH_BUTTON_TEXT).row();
+    keyboard.text(REPLY_NAME_MEANING_BUTTON_TEXT).row();
+    keyboard.text(REPLY_NAME_MATCH_BUTTON_TEXT).row();
+    keyboard.text(REPLY_PERSONALIZATION_BUTTON_TEXT).row();
+    keyboard.text(REPLY_PAIR_MATCH_BUTTON_TEXT).row();
 
     if (!hasAccess) {
       keyboard.text('💳 Premium Obuna');
@@ -1755,8 +1754,9 @@ export class BotService {
 
   private async showNameInputHelp(ctx: BotContext, input: string): Promise<void> {
     const keyboard = new InlineKeyboard()
-      .text("🌟 Ism ma'nosi", 'name_meaning')
-      .text(NAME_MATCH_BUTTON_TEXT, 'match:start')
+      .text(INLINE_NAME_MEANING_BUTTON_TEXT, 'name_meaning')
+      .row()
+      .text(INLINE_NAME_MATCH_BUTTON_TEXT, 'match:start')
       .row()
       .text('🏠 Menyu', 'main');
     let message = "❓ Noto'g'ri format!\n\n";
@@ -1889,7 +1889,7 @@ export class BotService {
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [
-            [{ text: NAME_MATCH_BUTTON_TEXT, callback_data: `match:lookup:${requestedName.toLowerCase()}` }],
+            [{ text: INLINE_NAME_MATCH_BUTTON_TEXT, callback_data: `match:lookup:${requestedName.toLowerCase()}` }],
             [{ text: '🏠 Menyu', callback_data: 'main' }],
           ],
         },
@@ -2050,7 +2050,7 @@ export class BotService {
       const results = this.personalizationCache.get(telegramId);
 
       if (!results || !results.suggestions || results.currentIndex >= results.suggestions.length) {
-        await ctx.reply('❌ Barcha ismlar ko\'rsatildi. Yangi tavsiya olish uchun "🎯 Shaxsiy tavsiya" tugmasini bosing.');
+        await ctx.reply(`❌ Barcha ismlar ko'rsatildi. Yangi tavsiya olish uchun "${REPLY_PERSONALIZATION_BUTTON_TEXT}" tugmasini bosing.`);
         return;
       }
 
