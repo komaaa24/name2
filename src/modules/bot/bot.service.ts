@@ -23,8 +23,9 @@ import { InputFile } from 'grammy';
 import { NameMatchService } from './services/name-match.service';
 
 const NAME_MATCH_BUTTON_TEXT = '💞 Ismingiz sizga mos insonni ochib beradi';
+const PAIR_MATCH_BUTTON_TEXT = '💘 Ikki ism mosligi';
 
-type FlowName = 'personalization' | 'quiz' | 'compatibility';
+type FlowName = 'personalization' | 'quiz' | 'compatibility' | 'compatibility_pair';
 
 interface FlowState {
   name: FlowName;
@@ -130,7 +131,8 @@ export class BotService {
       `🌟 <b>Botimiz imkoniyatlari:</b>\n\n` +
       `🔍 <b>Ism Ma'nosi</b> - Istalgan ismning ma'nosi\n` +
       `🎯 <b>Shaxsiy Tavsiya</b> - Farzandingizga ism qo'yishga ikkilanyapsizmi?\n` +
-      `💞 <b>Mos Inson</b> - Ismingizga mos juftlikni topadi\n\n` +
+      `💞 <b>Mos Inson</b> - Ismingizga mos insonni topadi\n` +
+      `🤝 <b>Ikki ism mosligi</b> - Ikki ism orasidagi moslikni tekshiradi\n\n` +
       (hasAccess
         ? `✅ <b>Status:</b> VIP foydalanuvchi\n♾️ Barcha imkoniyatlar ochiq!\n\n`
         : `💳 Bir martalik to'lov - 9 999 so'm\n🌟 Bir marta to'lov qiling va 1 yillik obunaga ega bo'ling.\n\n`) +
@@ -284,6 +286,14 @@ export class BotService {
       case 'lookup':
         await ctx.answerCallbackQuery('Mos ism qidirilmoqda...');
         await this.processNameMatch(ctx, this.resolveNameFromSlug(parts.slice(1).join(':')));
+        break;
+      case 'pair_start':
+        await this.promptForPairNameMatch(ctx);
+        await ctx.answerCallbackQuery();
+        break;
+      case 'pair_lookup':
+        await ctx.answerCallbackQuery('Ikkinchi ismni yuboring...');
+        await this.promptForPairNameMatch(ctx, this.resolveNameFromSlug(parts.slice(1).join(':')));
         break;
       default:
         await ctx.answerCallbackQuery();
@@ -442,6 +452,9 @@ export class BotService {
       case NAME_MATCH_BUTTON_TEXT:
         await this.promptForNameMatch(ctx);
         return;
+      case PAIR_MATCH_BUTTON_TEXT:
+        await this.promptForPairNameMatch(ctx);
+        return;
       case '📜 Oferta':
         if (ctx.from?.id) {
           await this.activityTracker.trackActivity(ctx.from.id, ActivityType.OFERTA_CLICK);
@@ -492,6 +505,8 @@ export class BotService {
       .text('🎯 Shaxsiy tavsiya', 'menu:personal')
       .row()
       .text(NAME_MATCH_BUTTON_TEXT, 'match:start')
+      .row()
+      .text(PAIR_MATCH_BUTTON_TEXT, 'match:pair_start')
       .row()
       .text('📈 Trendlar', 'menu:trends')
       .row()
@@ -548,11 +563,11 @@ export class BotService {
     );
   }
 
-  private async promptForNameMatch(ctx: BotContext): Promise<void> {
+  private async promptForNameMatch(ctx: BotContext, seededName?: string): Promise<void> {
     ctx.session.flow = {
       name: 'compatibility',
       step: 1,
-      payload: {},
+      payload: seededName ? { name: seededName } : {},
     };
 
     const keyboard = new InlineKeyboard()
@@ -560,10 +575,45 @@ export class BotService {
       .row()
       .text('🏠 Menyu', 'main');
 
-    const message =
-      `💞 <b>Ismingiz sizga mos insonni ochib beradi</b>\n\n` +
-      `Ismingizni yuboring, bot sizga eng mos ismni topib beradi.\n\n` +
-      `✨ Masalan: <code>Kamol</code>`;
+    const message = seededName
+      ? `💞 <b>Ismingiz sizga mos insonni ochib beradi</b>\n\n` +
+        `Tanlangan ism: <b>${seededName}</b>\n\n` +
+        `Mos insonni topish uchun tugmani bosing.\n`
+      : `💞 <b>Ismingiz sizga mos insonni ochib beradi</b>\n\n` +
+        `Ismingizni yuboring, bot sizga eng mos ismni topib beradi.\n\n` +
+        `✨ Masalan: <code>Kamol</code>`;
+
+    if (ctx.callbackQuery) {
+      await this.safeEditOrReply(ctx, message, keyboard);
+      return;
+    }
+
+    await ctx.reply(message, {
+      parse_mode: 'HTML',
+      reply_markup: keyboard,
+    });
+  }
+
+  private async promptForPairNameMatch(ctx: BotContext, seededName?: string): Promise<void> {
+    ctx.session.flow = {
+      name: 'compatibility_pair',
+      step: 1,
+      payload: seededName ? { firstName: seededName } : {},
+    };
+
+    const keyboard = new InlineKeyboard()
+      .text(NAME_MATCH_BUTTON_TEXT, 'match:start')
+      .row()
+      .text('🏠 Menyu', 'main');
+
+    const message = seededName
+      ? `🤝 <b>Ikki ism mosligi</b>\n\n` +
+        `1-ism tanlandi: <b>${seededName}</b>\n\n` +
+        `Endi ikkinchi ismni yuboring.\n\n` +
+        `✨ Masalan: <code>Lola</code>`
+      : `🤝 <b>Ikki ism mosligi</b>\n\n` +
+        `Ikkita ismni vergul bilan yuboring, bot ularning mosligini hisoblaydi.\n\n` +
+        `✨ Masalan: <code>Kamol, Lola</code>`;
 
     if (ctx.callbackQuery) {
       await this.safeEditOrReply(ctx, message, keyboard);
@@ -768,6 +818,8 @@ export class BotService {
       const keyboard = new InlineKeyboard()
         .text(NAME_MATCH_BUTTON_TEXT, `match:lookup:${name.toLowerCase()}`)
         .row()
+        .text(PAIR_MATCH_BUTTON_TEXT, `match:pair_lookup:${name.toLowerCase()}`)
+        .row()
         .text("🌟 Ism ma'nosi", 'name_meaning')
         .text('🏠 Menyu', 'main');
 
@@ -794,9 +846,49 @@ export class BotService {
     }
   }
 
+  private async processPairNameMatch(ctx: BotContext, rawFirstName: string, rawSecondName: string): Promise<void> {
+    const firstName = this.resolveNameFromSlug(rawFirstName);
+    const secondName = this.resolveNameFromSlug(rawSecondName);
+    await ctx.replyWithChatAction('typing');
+
+    try {
+      const match = await this.nameMatchService.getPairMatch(firstName, secondName);
+      const keyboard = new InlineKeyboard()
+        .text('🔁 Yana moslik tekshirish', 'match:pair_start')
+        .row()
+        .text(`💞 ${match.firstName} bilan mos inson`, `match:lookup:${match.firstName.toLowerCase()}`)
+        .row()
+        .text("🌟 Ism ma'nosi", 'name_meaning')
+        .text('🏠 Menyu', 'main');
+
+      const message =
+        `🤝 <b>Ikki ism mosligi</b>\n\n` +
+        `👤 <b>1-ism:</b> ${match.firstName}\n` +
+        `👤 <b>2-ism:</b> ${match.secondName}\n` +
+        `📊 <b>Moslik darajasi:</b> ${match.percent}\n` +
+        `✨ <b>Status:</b> ${match.type}\n\n` +
+        `${match.text || `💌 ${match.firstName} va ${match.secondName} orasidagi moslik yuqori ko'rinmoqda.`}`;
+
+      await ctx.reply(message, {
+        parse_mode: 'HTML',
+        reply_markup: keyboard,
+      });
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : "Ikki ism mosligini tekshirishda xatolik yuz berdi. Iltimos, keyinroq qayta urinib ko'ring.";
+
+      await ctx.reply(`❌ ${message}`, {
+        reply_markup: new InlineKeyboard().text('🏠 Menyu', 'main'),
+      });
+    }
+  }
+
   private buildNameDetailKeyboard(slug: string): InlineKeyboard {
     return new InlineKeyboard()
       .text(NAME_MATCH_BUTTON_TEXT, `match:lookup:${slug}`)
+      .row()
+      .text(PAIR_MATCH_BUTTON_TEXT, `match:pair_lookup:${slug}`)
       .row()
       .text('🏠 Menyu', 'main')
       .text('🎯 Shaxsiy tavsiya', 'menu:personal');
@@ -807,6 +899,7 @@ export class BotService {
     const keyboard = new Keyboard();
     keyboard.text('🔍 Ism Ma\'nosi').text('🎯 Shaxsiy Tavsiya').row();
     keyboard.text(NAME_MATCH_BUTTON_TEXT).row();
+    keyboard.text(PAIR_MATCH_BUTTON_TEXT).row();
 
     if (!hasAccess) {
       keyboard.text('💳 Premium Obuna');
@@ -1434,20 +1527,76 @@ export class BotService {
       return false;
     }
 
-    if (!this.nameMeaningService.isValidName(message)) {
+    const seededName = typeof flow.payload.name === 'string' ? flow.payload.name.trim() : '';
+    const targetName = seededName || message.trim();
+
+    if (!this.nameMeaningService.isValidName(targetName)) {
       await ctx.reply(
-        "❌ Ism formati noto'g'ri.\n\nIltimos, faqat ism yuboring.\n\n💡 Masalan: Kamol, Oisha, Muhammad",
+        "❌ Ism formati noto'g'ri.\n\nIltimos, faqat ism yuboring.\n\n💡 Masalan: <code>Kamol</code>",
+        { parse_mode: 'HTML' }
       );
       return true;
     }
 
     ctx.session.flow = undefined;
-    await this.processNameMatch(ctx, message);
+    await this.processNameMatch(ctx, targetName);
     return true;
+  }
+
+  private async handlePairNameMatchMessage(ctx: BotContext, message: string): Promise<boolean> {
+    const flow = ctx.session.flow as unknown as FlowState | undefined;
+    if (!flow || flow.name !== 'compatibility_pair') {
+      return false;
+    }
+
+    const seededFirstName = typeof flow.payload.firstName === 'string' ? flow.payload.firstName.trim() : '';
+    const pair = seededFirstName
+      ? { firstName: seededFirstName, secondName: message.trim() }
+      : this.extractNamePair(message);
+
+    if (!pair) {
+      await ctx.reply(
+        "❌ Format noto'g'ri.\n\nIltimos, ikkita ismni vergul bilan yuboring.\n\n💡 Masalan: <code>Kamol, Lola</code>",
+        { parse_mode: 'HTML' },
+      );
+      return true;
+    }
+
+    if (!this.nameMeaningService.isValidName(pair.firstName) || !this.nameMeaningService.isValidName(pair.secondName)) {
+      await ctx.reply(
+        "❌ Ismlar formati noto'g'ri.\n\nIltimos, faqat ikkita ism yuboring.\n\n💡 Masalan: <code>Kamol, Lola</code>",
+        { parse_mode: 'HTML' },
+      );
+      return true;
+    }
+
+    ctx.session.flow = undefined;
+    await this.processPairNameMatch(ctx, pair.firstName, pair.secondName);
+    return true;
+  }
+
+  private extractNamePair(value: string): { firstName: string; secondName: string } | null {
+    const parts = value
+      .split(/[,\n]/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    if (parts.length !== 2) {
+      return null;
+    }
+
+    return {
+      firstName: parts[0],
+      secondName: parts[1],
+    };
   }
 
   private async tryHandleFlowMessage(ctx: BotContext, message: string): Promise<boolean> {
     if (await this.handleNameMatchMessage(ctx, message)) {
+      return true;
+    }
+
+    if (await this.handlePairNameMatchMessage(ctx, message)) {
       return true;
     }
 

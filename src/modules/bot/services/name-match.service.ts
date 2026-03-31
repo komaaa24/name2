@@ -15,9 +15,25 @@ export interface NameMatchBatch {
   alternatives: NameMatchResult[];
 }
 
+export interface PairNameMatchResult {
+  firstName: string;
+  secondName: string;
+  percent: string;
+  type: string;
+  text: string;
+}
+
 interface NameMatchApiResponse {
   your_name?: string;
   match_name?: string;
+  percent?: string;
+  type?: string;
+  text?: string;
+}
+
+interface PairNameMatchApiResponse {
+  name1?: string;
+  name2?: string;
   percent?: string;
   type?: string;
   text?: string;
@@ -27,6 +43,7 @@ interface NameMatchApiResponse {
 export class NameMatchService {
   private readonly logger = new Logger(NameMatchService.name);
   private readonly apiUrl = 'http://94.158.53.20:8080/names_mos.php';
+  private readonly pairApiUrl = 'http://94.158.53.20:8080/names_2_mos.php';
 
   constructor(private readonly httpService: HttpService) {}
 
@@ -91,6 +108,41 @@ export class NameMatchService {
       primary: matches[0],
       alternatives: matches.slice(1),
     };
+  }
+
+  async getPairMatch(firstName: string, secondName: string): Promise<PairNameMatchResult> {
+    const cleanedFirstName = firstName.trim();
+    const cleanedSecondName = secondName.trim();
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<PairNameMatchApiResponse>(this.pairApiUrl, {
+          params: {
+            name1: cleanedFirstName,
+            name2: cleanedSecondName,
+          },
+          timeout: 10000,
+        }),
+      );
+
+      const payload = response.data;
+      const resolvedFirstName = this.toDisplayName(payload?.name1) || this.toDisplayName(cleanedFirstName);
+      const resolvedSecondName = this.toDisplayName(payload?.name2) || this.toDisplayName(cleanedSecondName);
+      if (!resolvedFirstName || !resolvedSecondName) {
+        throw new Error('Invalid pair match API response');
+      }
+
+      return {
+        firstName: resolvedFirstName,
+        secondName: resolvedSecondName,
+        percent: this.normalizePercent(payload?.percent),
+        type: payload?.type?.trim() || '💞 Ismlar mosligi',
+        text: payload?.text?.trim() || '',
+      };
+    } catch (error) {
+      this.logger.error(`Pair name match API failed for ${cleanedFirstName} + ${cleanedSecondName}`, error as any);
+      throw new Error("Ikki ism mosligini tekshirishda xatolik yuz berdi. Iltimos, keyinroq qayta urinib ko'ring.");
+    }
   }
 
   private normalizePercent(value?: string): string {
