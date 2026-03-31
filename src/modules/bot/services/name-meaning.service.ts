@@ -7,7 +7,13 @@ import { RequestedNameEntity } from '../../../shared/database/entities';
 
 export interface NameMeaning {
   meaning?: string;
+  gender?: 'boy' | 'girl';
   error?: string;
+}
+
+interface NameMeaningApiPayload {
+  description?: unknown;
+  pol?: unknown;
 }
 
 @Injectable()
@@ -29,33 +35,14 @@ export class NameMeaningService {
         timeout: 10000, // 10 second timeout
       });
 
-      if (
-        response.data &&
-        typeof response.data === 'string' &&
-        response.data.trim()
-      ) {
-        const meaningText = response.data.trim();
+      const parsedMeaning = this.parseApiResponse(response.data, name);
 
-        // API javobda faqat tire yoki bo'sh ma'no bo'lsa, topilmagan deb hisoblash
-        // Format: "Ma'nosi: valibek -" yoki "Ma'nosi: -" bo'lsa, ma'lumot yo'q
-        const cleanMeaning = meaningText
-          .replace(/^Ma'nosi:\s*/i, '') // "Ma'nosi:" ni olib tashlash
-          .replace(new RegExp(`\\b${name.trim().toLowerCase()}\\b`, 'i'), '') // Ism nomini olib tashlash
-          .replace(/\s*-\s*$/, '') // Oxiridagi tire ni olib tashlash
-          .trim();
-
-        if (!cleanMeaning || cleanMeaning === '') {
-          // Ma'lumot topilmadi - saqlash
-          await this.saveRequestedName(name, telegramId, username);
-          return { error: "❌ Kechirasiz, bu ism haqida ma'lumot ma'lumotlar bazamizda yo'q.\n\n⏰ <b>Tez orada qo'shiladi!</b>\n\nSizning so'rovingiz admin paneliga yuborildi." };
-        }
-
-        return { meaning: meaningText };
-      } else {
-        // Ma'lumot topilmadi - saqlash
+      if (!parsedMeaning.meaning) {
         await this.saveRequestedName(name, telegramId, username);
         return { error: "❌ Kechirasiz, bu ism haqida ma'lumot ma'lumotlar bazamizda yo'q.\n\n⏰ <b>Tez orada qo'shiladi!</b>\n\nSizning so'rovingiz admin paneliga yuborildi." };
       }
+
+      return parsedMeaning;
     } catch (error) {
       logger.error('Name meaning API error:', error);
       return {
@@ -77,6 +64,86 @@ export class NameMeaningService {
 
   formatNameMeaning(name: string, meaning: string): string {
     return `🌟 <b>${name}</b> ismining ma'nosi:\n\n${meaning}\n\nIsmlar manosi botidan foydalanishda davom eting.`;
+  }
+
+  private parseApiResponse(rawData: unknown, name: string): NameMeaning {
+    const parsedObject = this.parseJsonString(rawData);
+
+    if (parsedObject && typeof parsedObject === 'object') {
+      return this.parseObjectPayload(parsedObject as NameMeaningApiPayload, name);
+    }
+
+    if (typeof rawData === 'string') {
+      const meaning = this.normalizeMeaning(rawData, name);
+      return meaning ? { meaning } : {};
+    }
+
+    return {};
+  }
+
+  private parseObjectPayload(payload: NameMeaningApiPayload, name: string): NameMeaning {
+    const meaning = this.normalizeMeaning(payload.description, name);
+    const gender = this.parseGender(payload.pol);
+
+    if (!meaning) {
+      return gender ? { gender } : {};
+    }
+
+    return gender ? { meaning, gender } : { meaning };
+  }
+
+  private parseJsonString(rawData: unknown): unknown {
+    if (typeof rawData !== 'string') {
+      return rawData;
+    }
+
+    const trimmed = rawData.trim();
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+      return rawData;
+    }
+
+    try {
+      return JSON.parse(trimmed);
+    } catch (error) {
+      logger.warn('Failed to parse names_content API JSON string:', error);
+      return rawData;
+    }
+  }
+
+  private normalizeMeaning(rawMeaning: unknown, name: string): string | undefined {
+    if (typeof rawMeaning !== 'string') {
+      return undefined;
+    }
+
+    const escapedName = this.escapeRegExp(name.trim());
+    const cleanedMeaning = rawMeaning
+      .trim()
+      .replace(/^Ma'nosi:\s*/i, '')
+      .replace(new RegExp(`^${escapedName}\\s*[-:–]\\s*`, 'i'), '')
+      .replace(/\s*-\s*$/, '')
+      .trim();
+
+    if (!cleanedMeaning || cleanedMeaning === '-' || cleanedMeaning === '—') {
+      return undefined;
+    }
+
+    return cleanedMeaning;
+  }
+
+  private parseGender(pol: unknown): 'boy' | 'girl' | undefined {
+    if (pol === 1 || pol === '1') {
+      return 'boy';
+    }
+
+    if (pol === 2 || pol === '2') {
+      return 'girl';
+    }
+
+    return undefined;
+  }
+
+  private escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   private async saveRequestedName(name: string, telegramId?: number, username?: string): Promise<void> {

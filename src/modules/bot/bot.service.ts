@@ -635,7 +635,7 @@ export class BotService {
     const telegramId = ctx.from?.id;
     const username = ctx.from?.username || ctx.from?.first_name;
 
-    const { record, meaning, error } = await this.insightsService.getRichNameMeaning(name, telegramId, username);
+    const { record, meaning, gender: apiGender, error } = await this.insightsService.getRichNameMeaning(name, telegramId, username);
 
     // Get user access status for keyboard
     let hasAccess = false;
@@ -655,7 +655,11 @@ export class BotService {
     // Generate creative image card with gender detection
     try {
       // Detect gender from record or name
-      const gender = await this.inferCardGender(record?.name ?? name, meaning || '', record?.gender);
+      const gender = await this.inferCardGender(
+        record?.name ?? name,
+        meaning || '',
+        apiGender ?? record?.gender,
+      );
 
       const imageBuffer = await this.nameCardGenerator.generateNameCard(
         record?.name ?? name,

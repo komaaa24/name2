@@ -360,17 +360,29 @@ export class NameInsightsService {
   async getRichNameMeaning(name: string, telegramId?: number, username?: string): Promise<{
     record?: NameRecord;
     meaning: string;
+    gender?: 'boy' | 'girl';
     error?: string;
   }> {
     const record = this.findRecordByName(name);
+
+    const apiMeaning = await this.meaningService.getNameMeaning(name, telegramId, username);
+    if (apiMeaning.meaning) {
+      return {
+        record,
+        meaning: apiMeaning.meaning,
+        gender: apiMeaning.gender ?? (record?.gender === 'boy' || record?.gender === 'girl' ? record.gender : undefined),
+      };
+    }
+
     if (record) {
-      return { record, meaning: record.meaning };
+      return {
+        record,
+        meaning: record.meaning,
+        gender: record.gender === 'boy' || record.gender === 'girl' ? record.gender : undefined,
+      };
     }
-    const meaning = await this.meaningService.getNameMeaning(name, telegramId, username);
-    if (meaning.meaning) {
-      return { meaning: meaning.meaning };
-    }
-    return { meaning: '', error: meaning.error };
+
+    return { meaning: '', gender: apiMeaning.gender, error: apiMeaning.error };
   }
 
   formatRichMeaning(name: string, meaning: string, record?: NameRecord): string {
