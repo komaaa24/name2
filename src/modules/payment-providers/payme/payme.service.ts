@@ -87,6 +87,37 @@ export class PaymeService {
     }
   }
 
+  private extractAccountParams(account: any): {
+    planId?: string;
+    userId?: string;
+    selectedService?: string;
+  } {
+    const planId = account?.plan_id;
+    const userId = account?.user_id;
+    const selectedService = account?.selected_service ?? account?.selected_sport;
+
+    if (planId && userId) {
+      return { planId, userId, selectedService };
+    }
+
+    const orderId =
+      typeof account?.order_id === 'string' ? account.order_id.trim() : '';
+
+    if (!orderId) {
+      return { planId, userId, selectedService };
+    }
+
+    const [parsedPlanId, parsedUserId] = orderId
+      .split(':')
+      .map((part: string) => part.trim());
+
+    return {
+      planId: parsedPlanId || planId,
+      userId: parsedUserId || userId,
+      selectedService,
+    };
+  }
+
   async checkPerformTransaction(
     checkPerformTransactionDto: CheckPerformTransactionDto,
   ) {
@@ -95,10 +126,9 @@ export class PaymeService {
         params: checkPerformTransactionDto.params,
       });
 
-      const planId = checkPerformTransactionDto.params?.account?.plan_id;
-      const userId = checkPerformTransactionDto.params?.account?.user_id;
-      const selectedService =
-        checkPerformTransactionDto.params?.account?.selected_service;
+      const { planId, userId, selectedService } = this.extractAccountParams(
+        checkPerformTransactionDto.params?.account,
+      );
 
       logger.info('🔍 Validating IDs', { planId, userId, selectedService });
 
@@ -246,12 +276,10 @@ export class PaymeService {
         params: createTransactionDto.params,
       });
 
-      const planId = createTransactionDto.params?.account?.plan_id;
-      const userId = createTransactionDto.params?.account?.user_id;
+      const { planId, userId, selectedService } = this.extractAccountParams(
+        createTransactionDto.params?.account,
+      );
       const transId = createTransactionDto.params?.id;
-
-      const selectedService =
-        createTransactionDto.params?.account?.selected_sport;
 
       logger.info('🔍 Transaction details', {
         planId,
@@ -439,8 +467,7 @@ export class PaymeService {
         params: {
           amount: plan.price,
           account: {
-            plan_id: planId,
-            user_id: userId,
+            order_id: `${planId}:${userId}`,
           },
         },
       };
@@ -459,9 +486,9 @@ export class PaymeService {
 
       const newTransaction = this.transactionRepository.create({
         transId: createTransactionDto.params.id,
-        userId: createTransactionDto.params.account.user_id,
+        userId,
         paymentType: PaymentType.ONETIME,
-        planId: createTransactionDto.params.account.plan_id,
+        planId,
         provider: PaymentProvider.PAYME,
         state: TransactionState.Pending,
         amount: createTransactionDto.params.amount,

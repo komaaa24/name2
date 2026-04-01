@@ -47,8 +47,7 @@ export function buildPaymeProviderUrl(
 
   const parts = [
     `m=${merchantId}`,
-    `ac.plan_id=${params.planId}`,
-    `ac.user_id=${params.userId}`,
+    `ac.order_id=${params.planId}:${params.userId}`,
     `a=${amountInTiyns}`,
     `l=ru`,
   ];
