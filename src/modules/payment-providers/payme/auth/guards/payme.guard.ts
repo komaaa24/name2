@@ -18,6 +18,7 @@ export class PaymeBasicAuthGuard implements CanActivate {
     // Paymega qaytadigan hatolar status kodi doim 200 bo'lishi lozim !
     if (!token) {
       response.status(200).send({
+        jsonrpc: '2.0',
         id: transId,
         error: PaymeError.InvalidAuthorization,
       });
@@ -27,13 +28,18 @@ export class PaymeBasicAuthGuard implements CanActivate {
       const decoded = this.decodeToken(token);
       if (!decoded) {
         response.status(200).send({
+          jsonrpc: '2.0',
           id: transId,
           error: PaymeError.InvalidAuthorization,
         });
         return false;
       }
 
-      const [username, password] = decoded.split(':');
+      const separatorIndex = decoded.indexOf(':');
+      const username =
+        separatorIndex === -1 ? decoded : decoded.slice(0, separatorIndex);
+      const password =
+        separatorIndex === -1 ? '' : decoded.slice(separatorIndex + 1);
 
       // Payme sandbox ba'zan username sifatida Merchant ID ni yuboradi,
       // ba'zan konfiguratsiyadagi login (PAYME_LOGIN). Ikkalasini ham qabul qilamiz.
@@ -60,26 +66,26 @@ export class PaymeBasicAuthGuard implements CanActivate {
 
       const debugPayload = {
         username,
-        password,
         configuredLogin,
         merchantId,
-        prodPassword,
-        testPassword,
+        prodPasswordConfigured: !!prodPassword,
+        testPasswordConfigured: !!testPassword,
+        passwordLength: password.length,
       };
       logger.info('PAYME basic auth check', debugPayload);
-      console.log('PAYME basic auth check', debugPayload);
 
       const isValidPassword =
         (!!prodPassword && prodPassword === password) ||
         (!!testPassword && testPassword === password);
 
-      console.log('PAYME auth check result', {
+      logger.info('PAYME auth check result', {
         isValidUsername,
         isValidPassword,
       });
 
       if (!isValidUsername || !isValidPassword) {
         response.status(200).send({
+          jsonrpc: '2.0',
           id: transId,
           error: PaymeError.InvalidAuthorization,
         });
@@ -87,6 +93,7 @@ export class PaymeBasicAuthGuard implements CanActivate {
       }
     } catch {
       response.status(200).send({
+        jsonrpc: '2.0',
         id: transId,
         error: PaymeError.InvalidAuthorization,
       });
@@ -102,6 +109,8 @@ export class PaymeBasicAuthGuard implements CanActivate {
   }
 
   private decodeToken(token: string) {
-    return token?.length > 0 ? atob(token) : undefined;
+    return token?.length > 0
+      ? Buffer.from(token, 'base64').toString('utf8')
+      : undefined;
   }
 }

@@ -22,6 +22,12 @@ export class PaymeController {
     logger.info(
       `I am being called with reqBody in PaymeController: ${JSON.stringify(reqBody)}`,
     );
-    return await this.paymeService.handleTransactionMethods(reqBody);
+    const payload = await this.paymeService.handleTransactionMethods(reqBody);
+
+    return {
+      jsonrpc: '2.0',
+      ...(typeof payload === 'object' && payload !== null ? payload : {}),
+      id: (reqBody as { id?: string | number }).id ?? null,
+    };
   }
 }

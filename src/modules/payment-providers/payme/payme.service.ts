@@ -58,6 +58,16 @@ export class PaymeService {
     private readonly botService: BotService,
   ) { }
 
+  private buildAccountFieldError(
+    error: typeof PaymeError.UserNotFound,
+    field: 'user_id' | 'plan_id',
+  ) {
+    return {
+      ...error,
+      data: field,
+    };
+  }
+
   async handleTransactionMethods(reqBody: RequestBody) {
     const method = reqBody.method;
     switch (method) {
@@ -83,7 +93,16 @@ export class PaymeService {
       case TransactionMethods.GetStatement:
         return await this.getStatement(reqBody as GetStatementDto);
       default:
-        return 'Invalid transaction method';
+        return {
+          error: {
+            code: -32601,
+            message: {
+              uz: 'Metod topilmadi',
+              en: 'Method not found',
+              ru: 'Метод не найден',
+            },
+          },
+        };
     }
   }
 
@@ -141,30 +160,14 @@ export class PaymeService {
       if (!ValidationHelper.isValidObjectId(planId)) {
         logger.warn('❌ Invalid planId format', { planId });
         return {
-          error: {
-            code: ErrorStatusCodes.TransactionNotAllowed,
-            message: {
-              uz: 'Sizda mahsulot/foydalanuvchi topilmadi',
-              en: 'Product/user not found',
-              ru: 'Товар/пользователь не найден',
-            },
-            data: null,
-          },
+          error: this.buildAccountFieldError(PaymeError.ProductNotFound, 'plan_id'),
         };
       }
 
       if (!ValidationHelper.isValidObjectId(userId)) {
         logger.warn('❌ Invalid userId format', { userId });
         return {
-          error: {
-            code: ErrorStatusCodes.TransactionNotAllowed,
-            message: {
-              uz: 'Sizda mahsulot/foydalanuvchi topilmadi',
-              en: 'Product/user not found',
-              ru: 'Товар/пользователь не найден',
-            },
-            data: null,
-          },
+          error: this.buildAccountFieldError(PaymeError.UserNotFound, 'user_id'),
         };
       }
 
@@ -184,15 +187,9 @@ export class PaymeService {
       if (!plan || !user) {
         logger.warn('❌ Plan or user not found in database');
         return {
-          error: {
-            code: ErrorStatusCodes.TransactionNotAllowed,
-            message: {
-              uz: 'Sizda mahsulot/foydalanuvchi topilmadi',
-              en: 'Product/user not found',
-              ru: 'Товар/пользователь не найден',
-            },
-            data: null,
-          },
+          error: !plan
+            ? this.buildAccountFieldError(PaymeError.ProductNotFound, 'plan_id')
+            : this.buildAccountFieldError(PaymeError.UserNotFound, 'user_id'),
         };
       }
 
@@ -299,7 +296,7 @@ export class PaymeService {
           planId,
         });
         return {
-          error: PaymeError.ProductNotFound,
+          error: this.buildAccountFieldError(PaymeError.ProductNotFound, 'plan_id'),
           id: transId,
         };
       }
@@ -309,7 +306,7 @@ export class PaymeService {
           userId,
         });
         return {
-          error: PaymeError.UserNotFound,
+          error: this.buildAccountFieldError(PaymeError.UserNotFound, 'user_id'),
           id: transId,
         };
       }
@@ -325,14 +322,14 @@ export class PaymeService {
 
       if (!user) {
         return {
-          error: PaymeError.UserNotFound,
+          error: this.buildAccountFieldError(PaymeError.UserNotFound, 'user_id'),
           id: transId,
         };
       }
 
       if (!plan) {
         return {
-          error: PaymeError.ProductNotFound,
+          error: this.buildAccountFieldError(PaymeError.ProductNotFound, 'plan_id'),
           id: transId,
         };
       }
@@ -465,9 +462,11 @@ export class PaymeService {
       const checkTransaction: CheckPerformTransactionDto = {
         method: TransactionMethods.CheckPerformTransaction,
         params: {
-          amount: plan.price,
+          amount: createTransactionDto.params.amount,
           account: {
-            order_id: `${planId}:${userId}`,
+            plan_id: planId,
+            user_id: userId,
+            ...(selectedService ? { selected_service: selectedService } : {}),
           },
         },
       };
