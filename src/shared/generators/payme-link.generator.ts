@@ -72,20 +72,31 @@ export function buildPaymeProviderUrl(
 }
 
 export function generatePaymeLink(params: PaymeLinkGeneratorParams): string {
-  console.log('🔧 Debug - generatePaymeLink called with params:', params);
+  logger.info('🔧 generatePaymeLink called', params);
 
-  const token = createSignedToken(params, config.PAYMENT_LINK_SECRET);
-  console.log('🔧 Debug - Generated token:', token);
+  const explicitPaymentLinkBase =
+    config.PAYMENT_LINK_BASE_URL?.trim() || process.env.BASE_PAYMENT_LINK_URL?.trim();
 
-  const redirectUrl = buildMaskedPaymentLink(`payme?token=${token}`);
-  console.log('🔧 Debug - buildMaskedPaymentLink returned:', redirectUrl);
-
-  if (!redirectUrl) {
-    console.log('🔧 Debug - No redirect URL, using direct Payme URL');
+  // Public payment-link base aniq berilmagan bo'lsa, ichki/private hostga
+  // redirect yasab yubormaymiz. To'g'ridan-to'g'ri Payme checkout URL qaytaramiz.
+  if (!explicitPaymentLinkBase) {
+    logger.warn(
+      'PAYMENT_LINK_BASE_URL is empty. Returning direct Payme checkout URL instead of internal payment-link redirect.',
+    );
     return buildPaymeProviderUrl(params);
   }
 
-  console.log('🔧 Debug - Returning masked payment link:', redirectUrl);
+  const token = createSignedToken(params, config.PAYMENT_LINK_SECRET);
+  const redirectUrl = buildMaskedPaymentLink(`payme?token=${token}`);
+
+  if (!redirectUrl) {
+    logger.warn(
+      'Payment link base could not be resolved from PAYMENT_LINK_BASE_URL. Falling back to direct Payme checkout URL.',
+    );
+    return buildPaymeProviderUrl(params);
+  }
+
+  logger.info('Returning masked Payme payment link', { redirectUrl });
   return redirectUrl;
 }
 
