@@ -59,7 +59,7 @@ export function buildPaymeProviderUrl(
   console.log('Debug - paramsInString length:', paramsInString.length);
   console.log('Debug - paramsInString content:', paramsInString);
 
-  logger.info('📋 Payme params string:', paramsInString);
+  logger.info(`📋 Payme params string: ${paramsInString}`);
   const encodedParams = base64Encode(paramsInString);
   console.log('Debug - encodedParams:', encodedParams);
 
@@ -67,7 +67,7 @@ export function buildPaymeProviderUrl(
   console.log('Debug - PAYME_CHECKOUT_URL:', PAYME_CHECKOUT_URL);
   console.log('Debug - finalUrl:', finalUrl);
 
-  logger.info('🔗 Final Payme URL:', finalUrl);
+  logger.info(`🔗 Final Payme URL: ${finalUrl}`);
   return finalUrl;
 }
 

@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { PaymeService } from './payme.service';
 import { PaymeController } from './payme.controller';
 import { BotModule } from '../../bot/bot.module';
+import { PaymeBasicAuthGuard } from './auth/guards/payme.guard';
 import {
   UserEntity,
   PlanEntity,
@@ -15,6 +16,6 @@ import {
     TypeOrmModule.forFeature([UserEntity, PlanEntity, TransactionEntity]),
   ],
   controllers: [PaymeController],
-  providers: [PaymeService],
+  providers: [PaymeService, PaymeBasicAuthGuard],
 })
 export class PaymeModule {}
