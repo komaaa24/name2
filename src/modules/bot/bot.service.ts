@@ -610,8 +610,9 @@ export class BotService {
         `Endi ikkinchi ismni yuboring.\n\n` +
         `✨ Masalan: <code>Lola</code>`
       : `🤝 <b>Ikki ism mosligi</b>\n\n` +
-        `Ikkita ismni vergul bilan yuboring, bot ularning mosligini hisoblaydi.\n\n` +
-        `✨ Masalan: <code>Kamol, Lola</code>`;
+        `Ikkita ismni vergul bilan yoki oddiy bo'sh joy bilan yuboring, bot ularning mosligini hisoblaydi.\n\n` +
+        `✨ Masalan: <code>Kamol, Lola</code>\n` +
+        `✨ Yoki: <code>Kamol Lola</code>`;
 
     if (ctx.callbackQuery) {
       await this.safeEditOrReply(ctx, message, keyboard);
@@ -1559,7 +1560,7 @@ export class BotService {
 
     if (!pair) {
       await ctx.reply(
-        "❌ Format noto'g'ri.\n\nIltimos, ikkita ismni vergul bilan yuboring.\n\n💡 Masalan: <code>Kamol, Lola</code>",
+        "❌ Format noto'g'ri.\n\nIltimos, ikkita ismni vergul bilan yoki bo'sh joy bilan yuboring.\n\n💡 Masalan: <code>Kamol, Lola</code>\n💡 Yoki: <code>Kamol Lola</code>",
         { parse_mode: 'HTML' },
       );
       return true;
@@ -1567,7 +1568,7 @@ export class BotService {
 
     if (!this.nameMeaningService.isValidName(pair.firstName) || !this.nameMeaningService.isValidName(pair.secondName)) {
       await ctx.reply(
-        "❌ Ismlar formati noto'g'ri.\n\nIltimos, faqat ikkita ism yuboring.\n\n💡 Masalan: <code>Kamol, Lola</code>",
+        "❌ Ismlar formati noto'g'ri.\n\nIltimos, faqat ikkita ism yuboring.\n\n💡 Masalan: <code>Kamol, Lola</code>\n💡 Yoki: <code>Kamol Lola</code>",
         { parse_mode: 'HTML' },
       );
       return true;
@@ -1579,19 +1580,32 @@ export class BotService {
   }
 
   private extractNamePair(value: string): { firstName: string; secondName: string } | null {
-    const parts = value
+    const normalized = value.trim();
+    const delimiterParts = normalized
       .split(/[,\n]/)
       .map((part) => part.trim())
       .filter(Boolean);
 
-    if (parts.length !== 2) {
-      return null;
+    if (delimiterParts.length === 2) {
+      return {
+        firstName: delimiterParts[0],
+        secondName: delimiterParts[1],
+      };
     }
 
-    return {
-      firstName: parts[0],
-      secondName: parts[1],
-    };
+    const spacedParts = normalized
+      .split(/\s+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    if (spacedParts.length === 2) {
+      return {
+        firstName: spacedParts[0],
+        secondName: spacedParts[1],
+      };
+    }
+
+    return null;
   }
 
   private async tryHandleFlowMessage(ctx: BotContext, message: string): Promise<boolean> {
