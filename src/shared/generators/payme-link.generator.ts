@@ -49,8 +49,8 @@ export function buildPaymeProviderUrl(
     `m=${merchantId}`,
     `ac.plan_id=${params.planId}`,
     `ac.user_id=${params.userId}`,
-    `ac.selected_service=${params.planId}`,
     `a=${amountInTiyns}`,
+    `l=ru`,
   ];
   if (returnUrl) {
     parts.push(`c=${encodeURIComponent(returnUrl)}`);
