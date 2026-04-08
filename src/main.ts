@@ -28,9 +28,10 @@ async function bootstrap() {
   app.useStaticAssets(join(process.cwd(), 'public'));
   app.setViewEngine('ejs');
   app.setBaseViewsDir(join(process.cwd(), 'view'));
-  app.locals.googleAnalyticsId = configService
-    .get<string>('GOOGLE_ANALYTICS_ID', '')
-    .trim();
+  app.setLocal(
+    'googleAnalyticsId',
+    configService.get<string>('GOOGLE_ANALYTICS_ID', '').trim(),
+  );
   app.enableCors({ origin: true, methods: 'GET,HEAD,PUT,PATCH,POST,DELETE', credentials: true });
 
   try {
