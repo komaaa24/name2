@@ -16,6 +16,27 @@ import { ActivityTrackerService } from './activity-tracker.service';
 // Admin telegram IDs
 const ADMIN_IDS = [7789445876, 1083408, 85939027];
 
+interface TrafficSummary {
+    totalAttributedUsers: number;
+    paidUsers: number;
+    activeSubscribers: number;
+    totalRevenue: number;
+    todayNewUsers: number;
+    weekNewUsers: number;
+}
+
+interface TrafficSourceRow {
+    source: string;
+    newUsers: number;
+    todayNewUsers: number;
+    weekNewUsers: number;
+    totalStarts: number;
+    paidUsers: number;
+    payments: number;
+    activeSubscribers: number;
+    revenue: number;
+}
+
 @Injectable()
 export class AdminService {
     constructor(
@@ -50,6 +71,10 @@ export class AdminService {
 
             case 'activity':
                 await this.sendActivityStats(ctx);
+                break;
+
+            case 'traffic':
+                await this.sendTrafficStats(ctx);
                 break;
 
             case 'funnel':
@@ -105,6 +130,7 @@ export class AdminService {
             '<b>Mavjud komandalar:</b>\n\n' +
             '<b>📊 Statistika:</b>\n' +
             '/stats - Umumiy statistika\n' +
+            '/traffic - Kanal va reklama statistikasi\n' +
             '/activity - Faollik statistikasi\n' +
             '/funnel - To\'lov voronkasi\n' +
             '/users_active - Eng faol foydalanuvchilar\n' +
@@ -310,6 +336,159 @@ export class AdminService {
             logger.error('User stats error:', error);
             await ctx.reply('❌ Statistikani yuklashda xatolik!');
         }
+    }
+
+    private async sendTrafficStats(ctx: Context): Promise<void> {
+        try {
+            const { summary, sources } = await this.getTrafficStats();
+
+            if (!summary.totalAttributedUsers) {
+                await ctx.reply(
+                    '🚦 <b>TRAFIK STATISTIKASI</b>\n\n' +
+                    'Hozircha source bilan kelgan yangi foydalanuvchilar log qilinmagan.\n\n' +
+                    'Reklama uchun linklarni shu formatda ishlating:\n' +
+                    '<code>https://t.me/ismlarimizmanolari_bot?start=instagram</code>\n' +
+                    '<code>https://t.me/ismlarimizmanolari_bot?start=telegramkanal__aprel</code>',
+                    { parse_mode: 'HTML' },
+                );
+                return;
+            }
+
+            let message =
+                '🚦 <b>TRAFIK STATISTIKASI</b>\n\n' +
+                `👥 Attributed yangi users: <b>${summary.totalAttributedUsers}</b>\n` +
+                `📅 Bugun qo'shilganlar: <b>${summary.todayNewUsers}</b>\n` +
+                `🗓 So'nggi 7 kun: <b>${summary.weekNewUsers}</b>\n` +
+                `💳 To'lov qilgan users: <b>${summary.paidUsers}</b>\n` +
+                `✅ Aktiv obunachilar: <b>${summary.activeSubscribers}</b>\n` +
+                `💰 Daromad: <b>${summary.totalRevenue.toLocaleString('uz-UZ')} so'm</b>\n\n` +
+                '<b>Top manbalar:</b>\n';
+
+            sources.forEach((source, index) => {
+                message += `\n${index + 1}. <b>${source.source}</b>\n`;
+                message += `├ Yangi users: <b>${source.newUsers}</b>\n`;
+                message += `├ Bugun: <b>${source.todayNewUsers}</b>\n`;
+                message += `├ 7 kun: <b>${source.weekNewUsers}</b>\n`;
+                message += `├ /start lar: <b>${source.totalStarts}</b>\n`;
+                message += `├ To'lov qilganlar: <b>${source.paidUsers}</b>\n`;
+                message += `├ Aktiv obuna: <b>${source.activeSubscribers}</b>\n`;
+                message += `└ Daromad: <b>${source.revenue.toLocaleString('uz-UZ')} so'm</b>\n`;
+            });
+
+            message +=
+                '\nReklama link namunasi:\n' +
+                '<code>?start=instagram</code>\n' +
+                '<code>?start=telegramkanal__aprel</code>';
+
+            await ctx.reply(message, { parse_mode: 'HTML' });
+        } catch (error) {
+            logger.error('Traffic stats error:', error);
+            await ctx.reply('❌ Trafik statistikasini yuklashda xatolik!');
+        }
+    }
+
+    private async getTrafficStats(limit: number = 10): Promise<{
+        summary: TrafficSummary;
+        sources: TrafficSourceRow[];
+    }> {
+        const summaryRows = await this.activityRepository.query(
+            `
+                WITH first_attribution AS (
+                    SELECT DISTINCT ON (a.telegram_id)
+                        a.telegram_id,
+                        COALESCE(NULLIF(a.metadata->>'source', ''), 'organic') AS source,
+                        a.created_at AS first_start_at
+                    FROM activity_logs a
+                    WHERE a.activity_type = 'start_command'
+                      AND COALESCE((a.metadata->>'isNewUser')::boolean, false) = true
+                    ORDER BY a.telegram_id, a.created_at ASC
+                )
+                SELECT
+                    COUNT(DISTINCT fa.telegram_id)::int AS "totalAttributedUsers",
+                    COUNT(DISTINCT t."userId") FILTER (WHERE t.status = $1)::int AS "paidUsers",
+                    COUNT(DISTINCT u.id) FILTER (
+                        WHERE u."isActive" = true
+                          AND u."subscriptionEnd" IS NOT NULL
+                          AND u."subscriptionEnd" > NOW()
+                    )::int AS "activeSubscribers",
+                    COALESCE(SUM(CASE WHEN t.status = $1 THEN t.amount ELSE 0 END), 0)::numeric AS "totalRevenue",
+                    COUNT(DISTINCT fa.telegram_id) FILTER (WHERE first_start_at >= CURRENT_DATE)::int AS "todayNewUsers",
+                    COUNT(DISTINCT fa.telegram_id) FILTER (WHERE first_start_at >= NOW() - INTERVAL '7 days')::int AS "weekNewUsers"
+                FROM first_attribution fa
+                LEFT JOIN users u ON u."telegramId" = fa.telegram_id
+                LEFT JOIN transactions t ON t."userId" = u.id;
+            `,
+            [TransactionStatus.PAID],
+        );
+
+        const sourceRows = await this.activityRepository.query(
+            `
+                WITH first_attribution AS (
+                    SELECT DISTINCT ON (a.telegram_id)
+                        a.telegram_id,
+                        COALESCE(NULLIF(a.metadata->>'source', ''), 'organic') AS source,
+                        a.created_at AS first_start_at
+                    FROM activity_logs a
+                    WHERE a.activity_type = 'start_command'
+                      AND COALESCE((a.metadata->>'isNewUser')::boolean, false) = true
+                    ORDER BY a.telegram_id, a.created_at ASC
+                ),
+                source_starts AS (
+                    SELECT
+                        COALESCE(NULLIF(a.metadata->>'source', ''), 'organic') AS source,
+                        COUNT(*)::int AS total_starts
+                    FROM activity_logs a
+                    WHERE a.activity_type = 'start_command'
+                    GROUP BY 1
+                )
+                SELECT
+                    fa.source,
+                    COUNT(DISTINCT fa.telegram_id)::int AS "newUsers",
+                    COUNT(DISTINCT fa.telegram_id) FILTER (WHERE fa.first_start_at >= CURRENT_DATE)::int AS "todayNewUsers",
+                    COUNT(DISTINCT fa.telegram_id) FILTER (WHERE fa.first_start_at >= NOW() - INTERVAL '7 days')::int AS "weekNewUsers",
+                    COALESCE(MAX(ss.total_starts), 0)::int AS "totalStarts",
+                    COUNT(DISTINCT t."userId") FILTER (WHERE t.status = $1)::int AS "paidUsers",
+                    COUNT(t.id) FILTER (WHERE t.status = $1)::int AS payments,
+                    COUNT(DISTINCT u.id) FILTER (
+                        WHERE u."isActive" = true
+                          AND u."subscriptionEnd" IS NOT NULL
+                          AND u."subscriptionEnd" > NOW()
+                    )::int AS "activeSubscribers",
+                    COALESCE(SUM(CASE WHEN t.status = $1 THEN t.amount ELSE 0 END), 0)::numeric AS revenue
+                FROM first_attribution fa
+                LEFT JOIN users u ON u."telegramId" = fa.telegram_id
+                LEFT JOIN transactions t ON t."userId" = u.id
+                LEFT JOIN source_starts ss ON ss.source = fa.source
+                GROUP BY fa.source
+                ORDER BY "newUsers" DESC, revenue DESC, fa.source ASC
+                LIMIT $2;
+            `,
+            [TransactionStatus.PAID, limit],
+        );
+
+        const summaryRow = summaryRows[0] ?? {};
+        const summary: TrafficSummary = {
+            totalAttributedUsers: Number(summaryRow.totalAttributedUsers || 0),
+            paidUsers: Number(summaryRow.paidUsers || 0),
+            activeSubscribers: Number(summaryRow.activeSubscribers || 0),
+            totalRevenue: Number(summaryRow.totalRevenue || 0),
+            todayNewUsers: Number(summaryRow.todayNewUsers || 0),
+            weekNewUsers: Number(summaryRow.weekNewUsers || 0),
+        };
+
+        const sources: TrafficSourceRow[] = sourceRows.map((row: Record<string, unknown>) => ({
+            source: String(row.source || 'organic'),
+            newUsers: Number(row.newUsers || 0),
+            todayNewUsers: Number(row.todayNewUsers || 0),
+            weekNewUsers: Number(row.weekNewUsers || 0),
+            totalStarts: Number(row.totalStarts || 0),
+            paidUsers: Number(row.paidUsers || 0),
+            payments: Number(row.payments || 0),
+            activeSubscribers: Number(row.activeSubscribers || 0),
+            revenue: Number(row.revenue || 0),
+        }));
+
+        return { summary, sources };
     }
 
     private async sendPaymentStats(ctx: Context): Promise<void> {

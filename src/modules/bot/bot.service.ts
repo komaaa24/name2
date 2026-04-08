@@ -40,6 +40,17 @@ interface FlowState {
   payload: Record<string, unknown>;
 }
 
+interface StartAttribution {
+  source: string;
+  campaign?: string;
+  rawPayload?: string;
+}
+
+interface CreateUserResult {
+  user: UserEntity;
+  isNewUser: boolean;
+}
+
 @Injectable()
 export class BotService {
   // Foydalanuvchi oxirgi so'rovi uchun requested name
@@ -82,6 +93,7 @@ export class BotService {
     this.bot.command('start', (ctx) => this.handleStart(ctx));
     this.bot.command('admin', (ctx) => this.handleAdmin(ctx));
     this.bot.command('stats', (ctx) => this.adminService.handleAdminCommand(ctx, 'stats'));
+    this.bot.command('traffic', (ctx) => this.adminService.handleAdminCommand(ctx, 'traffic'));
     this.bot.command('activity', (ctx) => this.adminService.handleAdminCommand(ctx, 'activity'));
     this.bot.command('funnel', (ctx) => this.adminService.handleAdminCommand(ctx, 'funnel'));
     this.bot.command('users_active', (ctx) => this.adminService.handleAdminCommand(ctx, 'users_active'));
@@ -96,14 +108,23 @@ export class BotService {
   }
 
   private async handleStart(ctx: BotContext): Promise<void> {
-    await this.createUserIfNeeded(ctx);
+    const attribution = this.extractStartAttribution(ctx);
+    const userResult = await this.createUserIfNeeded(ctx);
 
     // Track /start command
     if (ctx.from?.id) {
       await this.activityTracker.trackActivity(
         ctx.from.id,
         ActivityType.START_COMMAND,
-        { username: ctx.from.username, firstName: ctx.from.first_name }
+        {
+          username: ctx.from.username ?? null,
+          firstName: ctx.from.first_name ?? null,
+          source: attribution.source,
+          campaign: attribution.campaign ?? null,
+          rawPayload: attribution.rawPayload ?? null,
+          isNewUser: userResult?.isNewUser ?? false,
+        },
+        userResult?.user.id,
       );
     }
 
@@ -115,12 +136,12 @@ export class BotService {
     // Senior-level welcome message with reply keyboard
     const telegramId = ctx.from?.id;
     let hasAccess = false;
-    let user: UserEntity | null = null;
+    let user: UserEntity | null = userResult?.user ?? null;
 
-    if (telegramId) {
+    if (telegramId && !user) {
       user = await this.userRepository.findOne({ where: { telegramId } });
-      hasAccess = this.userHasActiveAccess(user);
     }
+    hasAccess = this.userHasActiveAccess(user);
 
     const welcomeMessage = this.buildWelcomeMessage(this.getGreetingName(ctx), hasAccess);
 
@@ -465,13 +486,15 @@ export class BotService {
     }
   }
 
-  private async createUserIfNeeded(ctx: BotContext): Promise<void> {
+  private async createUserIfNeeded(ctx: BotContext): Promise<CreateUserResult | null> {
     const telegramId = ctx.from?.id;
     if (!telegramId) {
-      return;
+      return null;
     }
 
     let user = await this.userRepository.findOne({ where: { telegramId } });
+    let isNewUser = false;
+
     if (!user) {
       user = this.userRepository.create({
         telegramId,
@@ -480,8 +503,78 @@ export class BotService {
         lastName: ctx.from?.last_name,
       });
       await this.userRepository.save(user);
+      isNewUser = true;
       this.logger.log(`New user created: ${telegramId}`);
+      return { user, isNewUser };
     }
+
+    const nextUsername = ctx.from?.username ?? null;
+    const nextFirstName = ctx.from?.first_name ?? null;
+    const nextLastName = ctx.from?.last_name ?? null;
+
+    if (
+      user.username !== nextUsername ||
+      user.firstName !== nextFirstName ||
+      user.lastName !== nextLastName
+    ) {
+      user.username = nextUsername as any;
+      user.firstName = nextFirstName as any;
+      user.lastName = nextLastName as any;
+      user = await this.userRepository.save(user);
+    }
+
+    return { user, isNewUser };
+  }
+
+  private extractStartAttribution(ctx: BotContext): StartAttribution {
+    const rawPayload = this.extractStartPayload(ctx);
+    if (!rawPayload) {
+      return { source: 'organic' };
+    }
+
+    let sourceCandidate = rawPayload;
+    let campaignCandidate: string | undefined;
+
+    for (const delimiter of ['__', '|', ':']) {
+      const delimiterIndex = rawPayload.indexOf(delimiter);
+      if (delimiterIndex > 0) {
+        sourceCandidate = rawPayload.slice(0, delimiterIndex);
+        campaignCandidate = rawPayload.slice(delimiterIndex + delimiter.length);
+        break;
+      }
+    }
+
+    return {
+      source: this.normalizeAttributionToken(sourceCandidate) ?? 'unknown',
+      campaign: this.normalizeAttributionToken(campaignCandidate),
+      rawPayload,
+    };
+  }
+
+  private extractStartPayload(ctx: BotContext): string | undefined {
+    const text = ctx.message?.text?.trim();
+    if (!text) {
+      return undefined;
+    }
+
+    const match = text.match(/^\/start(?:@\w+)?(?:\s+(.+))?$/i);
+    const payload = match?.[1]?.trim();
+    return payload || undefined;
+  }
+
+  private normalizeAttributionToken(value?: string): string | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    const normalized = value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 64);
+
+    return normalized || undefined;
   }
 
   private getGreetingName(ctx: BotContext): string {
